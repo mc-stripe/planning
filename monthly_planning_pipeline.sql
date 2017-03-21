@@ -67,7 +67,7 @@ select
   opportunity_status as data_type,
   to_char(date_trunc('year', fcst_date),'YYYY') as year,
   to_char(date_trunc('quarter', fcst_date), 'YYYY-MM') as quarter,
-  to_char(date_trunc('week', fcst_date),'YYYY-MM-DD') as month,
+  to_char(date_trunc('month', fcst_date),'YYYY-MM-DD') as month,
   cc.sales_region as region,
   cc.sfdc_country_name as country,
   '' as sales_channel,
