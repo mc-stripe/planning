@@ -67,7 +67,7 @@ select
   opportunity_status as data_type,
   to_char(date_trunc('year', fcst_date),'YYYY') as year,
   to_char(date_trunc('quarter', fcst_date), 'YYYY-MM') as quarter,
-  to_char(date_trunc('month', fcst_date),'YYYY-MM-DD') as month,
+  --to_char(date_trunc('month', fcst_date),'YYYY-MM-DD') as month,
   cc.sales_region as region,
   cc.sfdc_country_name as country,
   '' as sales_channel,
@@ -134,9 +134,9 @@ end
   case when datediff('d', sales_activation_date, fcst_date) >= 0 and datediff('d', sales_activation_date, fcst_date) < 91 then 1 else 0 end as ninety_day_live,
   case when datediff('d', sales_activation_date, fcst_date) >= 0 and datediff('d', sales_activation_date, fcst_date) < 366 then 1 else 0 end as first_year_sold,
   COALESCE(SUM(pipeline_npv), 0) AS npv_fixed_fx,
-  to_char(date_trunc('month', sales_activation_date), 'YYYY-MM') as cohort,
+  to_char(date_trunc('quarter', sales_activation_date), 'YYYY-MM') as cohort,
   0  as total_npv_fixed_fx
 FROM daily_pipeline dp
 JOIN country_code as cc ON dp.merchant_country = cc.sfdc_country_name
 JOIN team_role as usr ON usr.sales_owner = dp.owner
-GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,20
+GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,19
