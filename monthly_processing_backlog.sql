@@ -10,11 +10,11 @@ with current_upsells as (
 ),
 -- load backlog curve, this determines the backlog 
 backlog_curve as (
-   select * from usertables.mc_backlog_new_curve_csv
+   select * from usertables.mc_backlog_new_curve_csv where days_since_activation >= 0
 ),
 -- opportunity amount
 opportunity as (
-select opportunity, avg(opportunity_amount) as opportunity_amount_usd_fixed_fx from sales.salesforce where opportunity_stage NOT IN ('Lost', 'Duplicate')
+select stripe_parent_merchant_id, avg(opportunity_amount) as opportunity_amount_usd_fixed_fx from sales.salesforce where opportunity_stage IN ('Live','Onboarding')
   group by 1
 ),
 -- country name and code groupings
@@ -38,15 +38,6 @@ special_dates as (
       OR
       opportunity_sales_override_activation_date is not null
    group by 1
-),
-
--- find the first date that the user was input in salesforce so that we can determine if it is window money or not
-user_first_contact as (
-   select
-      stripe_parent_merchant_id as sales_merchant_id,
-      min(opportunity_created_date) as first_opportunity_created_date
-   from sales.salesforce
-   group by 1 
 ),
 
 
@@ -78,7 +69,7 @@ non_upsell_processing as (
    where
       capture_date >= '2016-06-30'
    and 
-                               capture_date < '2017-06-22' and
+                               capture_date < '2017-06-26' and
 
    m.sales__is_sold = true
    group by 1,2,3,4,5,6
@@ -104,7 +95,7 @@ INNER JOIN current_upsells as upsells ON upsells.sales_merchant_id = ap.sales_me
 where
  capture_date >= '2016-06-30'
    and 
-                               capture_date < '2017-06-22' and
+                               capture_date < '2017-06-26' and
  
 m.sales__is_sold = true
 
@@ -135,7 +126,7 @@ select
 sales_merchant_id,
 sales_category, 
 sales_activation_date,
-datediff('day', pv.sales_activation_date, '2017-06-22') as days_since_activation,      -- UPDATE THIS TO THE LAST DAY OF PROCESSING
+datediff('day', pv.sales_activation_date, '2017-06-26') as days_since_activation,      -- UPDATE THIS TO THE LAST DAY OF PROCESSING
 orig_activation,
 first_year_npv,
 first_year_npv/first_year_sold_cumulative_pct as first_year_est_npv
@@ -149,7 +140,7 @@ sum(first_year_sold_npv_usd_fx) as first_year_npv
 from processing_volume group by 1,2,3,4) pv 
 
 
-inner join backlog_curve bc on bc.days_since_activation = datediff('day', pv.sales_activation_date, '2017-06-22')  -- HAVE TO SPECIFY THE DATE
+inner join backlog_curve bc on bc.days_since_activation = datediff('day', pv.sales_activation_date, '2017-06-26')  -- HAVE TO SPECIFY THE DATE
 where first_year_npv > 0),
 
 daily_backlog as (select
@@ -173,7 +164,7 @@ select
   'weekly_processing' as data_type,
   to_char(date_trunc('year', capture_date),'YYYY') as year,
   to_char(date_trunc('quarter', capture_date), 'YYYY-MM') as quarter,
-  to_char(date_trunc('week', capture_date + '1 day'::interval)::date - '1 day'::interval,'YYYY-MM-DD') as finance_week,
+  to_char(date_trunc('month', capture_date),'YYYY-MM') as month,
   case when date_trunc('quarter', capture_date) = date_trunc('quarter', CURRENT_DATE) then 1 else 0 end as qtd, 
   case when date_trunc('week', capture_date + '1 day'::interval)::date - '1 day'::interval = date_trunc('week', dateadd('day',-3, CURRENT_DATE) + '1 day'::interval)::date - '1 day'::interval then 1 else 0 end as this_week, 
   cc.sales_region as region,
@@ -237,20 +228,21 @@ end
   sales_activation_date,
   case when datediff('d', sales_activation_date, capture_date) >= 0 and datediff('d', sales_activation_date, capture_date) < 91 then 1 else 0 end as ninety_day_live,
   case when datediff('d', sales_activation_date, capture_date) >= 0 and datediff('d', sales_activation_date, capture_date) < 366 then 1 else 0 end as first_year_sold,
+  avg(opty.opportunity_amount_usd_fixed_fx) as deal_signed_value_usd,
   COALESCE(SUM(first_year_sold_npv_usd_fx), 0) AS npv_fixed_fx,
-  case when orig_activation > '2016-12-31' then 1 else 0 end as newNPV,
-  case when date_trunc('quarter', sales_activation_date) = date_trunc('quarter',current_date-5) and date_trunc('quarter', first_opportunity_created_date) = date_trunc('quarter',current_date-5) then 1 else 0 end as in_quarter_opportunity
-
+  count(distinct capture_date) AS days_in_period
+  
 FROM processing_volume pv
 JOIN dim.merchants AS m ON pv.sales_merchant_id = m._id
 JOIN country_code as cc ON m.sales__merchant_country = cc.country_code
 JOIN team_role as usr ON usr.sales_owner = m.sales__owner
-LEFT JOIN user_first_contact as sfdc ON sfdc.sales_merchant_id = m._id
+LEFT JOIN opportunity as opty ON opty.stripe_parent_merchant_id = pv.sales_merchant_id
+
 where
 capture_date >= '2017-01-01' 
 
 
-GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,22,23
+GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20
 
 
 
@@ -260,8 +252,7 @@ select
   'weekly_backlog' as data_type,
   to_char(date_trunc('year', fcst_date),'YYYY') as year,
   to_char(date_trunc('quarter', fcst_date), 'YYYY-MM') as quarter,
-  to_char(date_trunc('week', fcst_date + '1 day'::interval)::date - '1 day'::interval,'YYYY-MM-DD') as finance_week,
-  0 as qtd, 
+  to_char(date_trunc('month', fcst_date),'YYYY-MM') as month,  0 as qtd, 
   0 as this_week, 
   cc.sales_region as region,
   cc.sfdc_country_name as country,
@@ -334,16 +325,15 @@ end
     when backlog_end_date is not null and datediff('d', backlog_end_date, fcst_date) >= 0 then 0
     when datediff('d', sales_activation_date, fcst_date) >= 0 and datediff('d', sales_activation_date, fcst_date) < 366 then 1 
     else 0 end as first_year_sold,
-
+  avg(opty.opportunity_amount_usd_fixed_fx) as deal_signed_value_usd,
   COALESCE(SUM(backlog_npv), 0) AS npv_fixed_fx,
-  case when orig_activation > '2016-12-31' and fcst_date <='2017-12-31' then 1 else 0 end as newNPV,
-  case when date_trunc('quarter', sales_activation_date) = date_trunc('quarter',current_date-5) and date_trunc('quarter', first_opportunity_created_date) = date_trunc('quarter',current_date-5) then 1 else 0 end as in_quarter_opportunity
+  count(distinct fcst_date) AS days_in_period
 FROM daily_backlog pv
 JOIN dim.merchants AS m ON pv.sales_merchant_id = m._id
 JOIN country_code as cc ON m.sales__merchant_country = cc.country_code
 JOIN team_role as usr ON usr.sales_owner = m.sales__owner
 LEFT JOIN special_dates as early_ending_users ON early_ending_users.sales_merchant_id = pv.sales_merchant_id
-LEFT JOIN user_first_contact as sfdc ON sfdc.sales_merchant_id = m._id
+LEFT JOIN opportunity as opty ON opty.stripe_parent_merchant_id = pv.sales_merchant_id
 where
 fcst_date >= '2017-01-01' 
-GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,22,23
+GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20
