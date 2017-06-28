@@ -161,12 +161,12 @@ user_level_table
 **************************************/ 
 
 select 
-  'weekly_processing' as data_type,
+  'processing' as data_type,
   to_char(date_trunc('year', capture_date),'YYYY') as year,
   to_char(date_trunc('quarter', capture_date), 'YYYY-MM') as quarter,
   to_char(date_trunc('month', capture_date),'YYYY-MM') as month,
-  case when date_trunc('quarter', capture_date) = date_trunc('quarter', CURRENT_DATE) then 1 else 0 end as qtd, 
-  case when date_trunc('week', capture_date + '1 day'::interval)::date - '1 day'::interval = date_trunc('week', dateadd('day',-3, CURRENT_DATE) + '1 day'::interval)::date - '1 day'::interval then 1 else 0 end as this_week, 
+  0 as qtd, 
+  0 as this_week, 
   cc.sales_region as region,
   cc.sfdc_country_name as country,
   '' as sales_channel,
@@ -225,8 +225,8 @@ end
   pv.sales_merchant_id as sales_merchant_id,
   m.sales__name AS merchant_name,
   sales_category,
-  sales_activation_date,
-  case when datediff('d', sales_activation_date, capture_date) >= 0 and datediff('d', sales_activation_date, capture_date) < 91 then 1 else 0 end as ninety_day_live,
+  to_char(sales_activation_date,'YYYY-MM-DD') as sales_go_live_date,
+  case when datediff('d', sales_activation_date, capture_date) >= 0 and datediff('d', sales_activation_date, capture_date) < 90 then 1 else 0 end as ninety_day_live,
   case when datediff('d', sales_activation_date, capture_date) >= 0 and datediff('d', sales_activation_date, capture_date) < 366 then 1 else 0 end as first_year_sold,
   avg(opty.opportunity_amount_usd_fixed_fx) as deal_signed_value_usd,
   COALESCE(SUM(first_year_sold_npv_usd_fx), 0) AS npv_fixed_fx,
@@ -240,7 +240,8 @@ LEFT JOIN opportunity as opty ON opty.stripe_parent_merchant_id = pv.sales_merch
 
 where
 capture_date >= '2017-01-01' 
-
+and
+sales_activation_date < '2017-06-26'
 
 GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20
 
@@ -252,7 +253,8 @@ select
   'weekly_backlog' as data_type,
   to_char(date_trunc('year', fcst_date),'YYYY') as year,
   to_char(date_trunc('quarter', fcst_date), 'YYYY-MM') as quarter,
-  to_char(date_trunc('month', fcst_date),'YYYY-MM') as month,  0 as qtd, 
+  to_char(date_trunc('month', fcst_date),'YYYY-MM') as month,  
+  0 as qtd, 
   0 as this_week, 
   cc.sales_region as region,
   cc.sfdc_country_name as country,
@@ -315,10 +317,10 @@ end
   pv.sales_merchant_id as sales_merchant_id,
   m.sales__name AS merchant_name,
   sales_category,
-  sales_activation_date,
+  to_char(sales_activation_date,'YYYY-MM-DD') as sales_go_live_date,
   case 
      when backlog_end_date is not null and datediff('d', backlog_end_date, fcst_date) >= 0 then 0
-     when datediff('d', sales_activation_date, fcst_date) >= 0 and datediff('d', sales_activation_date, fcst_date) < 91 then 1 
+     when datediff('d', sales_activation_date, fcst_date) >= 0 and datediff('d', sales_activation_date, fcst_date) < 90 then 1 
      else 0 end as ninety_day_live,
   
   case 
@@ -336,4 +338,7 @@ LEFT JOIN special_dates as early_ending_users ON early_ending_users.sales_mercha
 LEFT JOIN opportunity as opty ON opty.stripe_parent_merchant_id = pv.sales_merchant_id
 where
 fcst_date >= '2017-01-01' 
+and
+sales_activation_date < '2017-06-26'
+
 GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20
